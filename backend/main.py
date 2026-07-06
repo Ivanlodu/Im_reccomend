@@ -8,8 +8,10 @@ from pkce import generate_code_verifier, generate_code_challenge
 load_dotenv()
 app = FastAPI()
 
-CLIENT_ID = os.getenv("Client ID")
-REDIRECT_URI = os.getenv("Redirect URI")
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
+print("Loaded client ID:", CLIENT_ID)
+print("Loaded redirect URI:", REDIRECT_URI)
 SCOPE = "user-read-private user-read-email user-library-read"
 
 pkce_store = {}
@@ -46,5 +48,5 @@ async def callback(request: Request):
                 "code_verifier": verifier,
             },
         )
-
+    print("Callback hit with code:", code)
     return token_response.json()
