@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 import httpx
 from dotenv import load_dotenv
 from pkce import generate_code_verifier, generate_code_challenge
-
+from db.populate import save_user
 load_dotenv()
 app = FastAPI()
 
@@ -48,5 +48,8 @@ async def callback(request: Request):
                 "code_verifier": verifier,
             },
         )
+    token_data = token_response.json()
+    user = await save_user(access_token=token_data["access_token"], refresh_token=token_data["refresh_token"], expires_in=token_data["expires_in"])
     print("Callback hit with code:", code)
-    return token_response.json()
+    return {"message":"User saved","spotify_id": user.spotify_id}
+    
