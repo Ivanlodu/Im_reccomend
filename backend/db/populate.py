@@ -1,6 +1,6 @@
 import httpx
 from .database import SessionLocal
-from .User import User
+from .models import User
 from datetime import datetime, timedelta
 
 async def save_user(access_token:str, refresh_token:str, expires_in: int):
