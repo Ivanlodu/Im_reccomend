@@ -21,9 +21,9 @@ class Track(Base):
     id = Column(Integer, primary_key=True, index=True)
     spotify_id = Column(String, nullable=False, unique=True)
     name = Column(String)
-    artist = Column(String)
+    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=False)
     album = Column(String)
-    release_date = Column(DateTime)
+    release_date = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -33,8 +33,7 @@ class Artist(Base):
     id = Column(Integer, primary_key=True, index=True)
     spotify_id = Column(String, nullable=False, unique=True)
     name = Column(String)
-    artist_id = Column(Integer, ForeignKey('artists.id'))  # Self-referential foreign key for related artists
-    genres = Column(String)  # You might want to store this as a JSON or a separate table for many-to-many relationships
+    genres = Column(String)
     popularity = Column(Integer)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

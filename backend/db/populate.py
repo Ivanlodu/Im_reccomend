@@ -1,6 +1,6 @@
 import httpx
 from .database import SessionLocal
-from .models import User
+from .models import User, Track, Artist, ListenEvent
 from datetime import datetime, timedelta
 
 async def save_user(access_token: str, refresh_token: str, expires_in: int):
@@ -49,13 +49,14 @@ async def save_user(access_token: str, refresh_token: str, expires_in: int):
         db.close()
         return new_user
 
-async def fetch_saved_tracks(access_token:str):
+async def fetch_saved_tracks(access_token: str):
     all_tracks = []
     offset = 0
     limit = 50
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         while True:
+            print(f"Fetching offset {offset}...")
             response = await client.get(
                 "https://api.spotify.com/v1/me/tracks",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -70,4 +71,95 @@ async def fetch_saved_tracks(access_token:str):
             all_tracks.extend(items)
             offset += limit
 
-    return all_tracks
+    return all_tracks  # raw, unextracted
+
+def extract_track_data(all_tracks):
+    extracted = []
+
+    for item in all_tracks:
+        track = item.get('track')
+        if not track:
+            continue
+
+        album = track.get('album')
+        artists = track.get('artists')
+
+        if not album or not artists:
+            continue
+
+        extracted.append({
+            "track_id": track['id'],
+            "track_name": track['name'],
+            "album_name": album['name'],
+            "release_date": album['release_date'],
+            "artist_id": artists[0]['id'],
+            "artist_name": artists[0]['name'],
+            "added_at": item.get('added_at'),  # new field, from the outer item
+        })
+
+    return extracted
+
+def save_tracks(extracted_tracks):
+    db = SessionLocal()
+
+    for t in extracted_tracks:
+        # --- Artist: check first, create if missing ---
+        existing_artist = db.query(Artist).filter(
+            Artist.spotify_id == t["artist_id"]
+        ).first()
+
+        if existing_artist:
+            artist = existing_artist
+        else:
+            artist = Artist(
+                spotify_id=t["artist_id"],
+                name=t["artist_name"]
+            )
+            db.add(artist)
+            db.commit()
+            db.refresh(artist)
+
+        # --- Track: check first, create if missing ---
+        existing_track = db.query(Track).filter(
+            Track.spotify_id == t["track_id"]
+        ).first()
+
+        if existing_track:
+            continue  # already saved, skip
+
+        new_track = Track(
+            spotify_id=t["track_id"],
+            name=t["track_name"],
+            artist_id=artist.id,       # FK to Artist's internal id
+            album=t["album_name"],
+            release_date=t["release_date"]  # stored as string now
+        )
+        db.add(new_track)
+        db.commit()
+
+    db.close()
+
+def save_listen_events(extracted_tracks, user_id):
+    db = SessionLocal()
+
+    for t in extracted_tracks:
+        # Need the Track's internal id, not its spotify_id, for the FK
+        track = db.query(Track).filter(Track.spotify_id == t["track_id"]).first()
+
+        if not track:
+            continue  # track wasn't saved for some reason, skip
+
+        listened_at = None
+        if t.get("added_at"):
+            # Spotify format: "2023-05-01T12:34:56Z"
+            listened_at = datetime.strptime(t["added_at"], "%Y-%m-%dT%H:%M:%SZ")
+
+        new_event = ListenEvent(
+            user_id=user_id,
+            track_id=track.id,
+            listened_at=listened_at
+        )
+        db.add(new_event)
+
+    db.commit()
+    db.close()

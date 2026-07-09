@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 import httpx
 from dotenv import load_dotenv
 from pkce import generate_code_verifier, generate_code_challenge
-from db.populate import save_user
+from db.populate import extract_track_data, save_tracks, save_user, fetch_saved_tracks, save_listen_events
 load_dotenv()
 app = FastAPI()
 
@@ -49,7 +49,12 @@ async def callback(request: Request):
             },
         )
     token_data = token_response.json()
+    print("Token data received:", token_data)
     user = await save_user(access_token=token_data["access_token"], refresh_token=token_data["refresh_token"], expires_in=token_data["expires_in"])
-    print("Callback hit with code:", code)
-    return {"message":"User saved","spotify_id": user.spotify_id}
+    raw_tracks = await fetch_saved_tracks(access_token=token_data["access_token"])
+    extracted = extract_track_data(raw_tracks)
+    save_tracks(extracted)
+    save_listen_events(extracted, user.id)
+    print("Final tracks returned:", raw_tracks)
+    return {"message":"User saved tracks returned","spotify_id": user.spotify_id, "tracks": raw_tracks}
     
