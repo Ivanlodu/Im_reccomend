@@ -23,7 +23,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")  # e.g. postgresql://user:pass@localhost:5432/spotify
 OLLAMA_MODEL = "llama3.1:8b"
 BATCH_SIZE = 25
-DRY_RUN = True  # set False once you're happy with the prompt, to write descriptions back
+DRY_RUN = False  # set False once you're happy with the prompt, to write descriptions back
 
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
@@ -34,14 +34,16 @@ Artist: {artist_name}
 Album: {album}
 Genres (if known): {genres}
 
+You do not have access to the actual audio. Do not invent specific, checkable production details (exact instruments used, exact BPM, exact vocal processing) as if you'd heard the track. Instead, reason from what's genuinely knowable: the artist's known style, the genre's typical sonic conventions, the era/production trends of the album, and the title's tone.
+
 Write a 2-3 sentence description covering:
-- Sonic texture and production (e.g. "hazy autotuned vocals over a sparse trap beat", "warm analog synths with tape hiss")
-- Mood/energy (e.g. "melancholic but danceable", "aggressive and claustrophobic")
-- What kind of listening moment it fits (e.g. "late-night drive", "gym warmup", "rainy Sunday morning")
+- Likely sonic texture and production, phrased as characteristic of the artist/genre/era rather than as a direct claim about this specific recording (e.g. "carries the hazy, autotune-heavy production typical of [artist]'s recent work" rather than "features autotuned vocals over a sparse trap beat")
+- Mood/energy you'd reasonably expect given the genre and title
 
-Avoid generic filler like "a great song" or "catchy tune". Be specific and sensory. Do not just restate the genre tag. Output ONLY the description, no preamble.
+You may optionally mention a listening context if one is genuinely distinctive to this track's energy -- but do NOT default to generic scene-setting like "late-night drive," "deserted highway," or "rainy Sunday morning." Those are overused clichés and must be actively avoided. If you can't think of a listening moment that's actually specific to this song rather than a generic mood cliché, skip it entirely and spend the sentence on texture/mood instead.
+
+Avoid generic filler like "a great song" or "catchy tune". Be specific and sensory, but grounded in genre/artist conventions rather than fabricated specifics. Do not just restate the genre tag. Vary your sentence structure and vocabulary meaningfully between tracks -- do not reuse the same phrasing patterns across different songs. Output ONLY the description, no preamble.
 """
-
 
 def fetch_batch(conn, limit: int):
     with conn.cursor() as cur:
@@ -85,24 +87,28 @@ def write_description(conn, track_id, description: str):
 
 def main():
     with psycopg.connect(DATABASE_URL) as conn:
-        batch = fetch_batch(conn, BATCH_SIZE)
-        print(f"Pulled {len(batch)} tracks needing enrichment.\n")
+        while True:
+            batch = fetch_batch(conn, BATCH_SIZE)
+            if not batch:
+                break
+            print(f"Pulled {len(batch)} tracks needing enrichment.\n")
 
-        for i, track in enumerate(batch, 1):
-            start = time.time()
-            description = generate_description(track)
-            elapsed = time.time() - start
+            for i, track in enumerate(batch, 1):
+                start = time.time()
+                description = generate_description(track)
+                elapsed = time.time() - start
 
-            print(f"[{i}/{len(batch)}] {track['artist_name']} — {track['name']} ({elapsed:.1f}s)")
-            print(f"  {description}\n")
+                print(f"[{i}/{len(batch)}] {track['artist_name']} — {track['name']} ({elapsed:.1f}s)")
+                print(f"  {description}\n")
 
-            if not DRY_RUN:
-                write_description(conn, track["id"], description)
+                if not DRY_RUN:
+                    write_description(conn, track["id"], description)
 
-        if DRY_RUN:
-            print("DRY_RUN is True — nothing written to Postgres. Review outputs above, tune PROMPT_TEMPLATE, and re-run.")
-        else:
-            print("Descriptions written to Postgres.")
+            if DRY_RUN:
+                print("DRY_RUN is True — nothing written to Postgres. Review outputs above, tune PROMPT_TEMPLATE, and re-run.")
+                break
+            else:
+                print("Descriptions written to Postgres.")
 
 
 if __name__ == "__main__":
